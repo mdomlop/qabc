@@ -1,0 +1,14 @@
+Source: qabc
+Section: games
+Priority: optional
+Maintainer: Manuel Domínguez López <mdomlop@gmail.com>
+Build-Depends: debhelper (>= 9), pandoc
+Standards-Version: 3.9.8
+Homepage: https://github.com/mdomlop/qabc
+
+Package: qabc
+Architecture: all
+Provides: qabc
+Conflicts: qabc-git
+Depends: python3 (>= 3.5), python-pyqt5 (>=5.7)
+Description: A abc music files manager.

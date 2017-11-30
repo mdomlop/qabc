@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Qabc
+Exec=qabc
+Icon=qabc
+Categories=Multimedia;
+Terminal=false
+Type=Application
