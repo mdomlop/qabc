@@ -5,12 +5,14 @@ import gettext
 import subprocess
 import uuid
 
-from PyQt5.QtCore import (QFile, QSettings, QSize, QUrl, Qt, QT_VERSION_STR)
+from PyQt5.QtCore import (QFile, QSettings, QSize, QUrl, Qt, QT_VERSION_STR,
+                          QSortFilterProxyModel)
 from PyQt5.QtGui import QIcon, QKeySequence, QFont
 from PyQt5.QtWidgets import (QWidget, QAction, QApplication, QComboBox,
                              QSpinBox, QMainWindow, QLabel, QFileDialog,
                              QTabWidget, QGridLayout, QVBoxLayout, QHBoxLayout,
-                             QMessageBox, QTextEdit, QPushButton, QRadioButton)
+                             QMessageBox, QTextEdit, QPushButton, QRadioButton,
+                             QTableWidget,QTableWidgetItem, QAbstractItemView, QSplitter)
 from PyQt5.QtSvg import QSvgWidget
 from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer
 
@@ -48,6 +50,7 @@ License: GPL-3.0+
  Public License version 3 can be found in "/usr/share/common-licenses/GPL-3".
 '''
 
+X, T, R, K = range(4)
 
 class TuneBook():
     def __init__(self):
@@ -161,9 +164,12 @@ class Tune():
 
     def getField(self, key):
         sep = ':'
+        comment = '%'
         for i in self.text.split('\n'):
             if i.startswith(key):
                 v = i.split(sep)[1]
+                if comment in v:
+                    v = v.split(comment)[0]
                 return(v.strip())
         return('')
 
@@ -238,7 +244,21 @@ class EditWindow(QMainWindow):
         self.textEdit = QTextEdit()
         self.textEdit.textChanged.connect(self.updateInterface)
 
-        self.setCentralWidget(self.textEdit)
+        self.tableWidget = QTableWidget()
+        self.tableWidget.setSortingEnabled(True)
+        self.tableWidget.verticalHeader().setVisible(False)
+
+        self.tableWidget.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tableWidget.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tableWidget.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.tableWidget.itemSelectionChanged.connect(self.debug)
+
+        self.splitter = QSplitter()
+        self.splitter.setOrientation(Qt.Vertical)
+        self.splitter.addWidget(self.tableWidget)
+        self.splitter.addWidget(self.textEdit)
+
+        self.setCentralWidget(self.splitter)
 
         self.createMenus()
         self.createToolBars()
@@ -254,6 +274,11 @@ class EditWindow(QMainWindow):
         if f:
             self.openFile(f)
 
+    def debug(self):
+        r = self.tableWidget.currentRow()
+        index = self.tableWidget.item(r,0).text()
+        self.comboTitle.setCurrentIndex(int(index))
+
     def openFile(self, f=None):
         if f:
             select = f
@@ -265,15 +290,41 @@ class EditWindow(QMainWindow):
             self.showTune()
             for i in tuneBook.tunes:
                 tuneBook.tunesSaved.append(i)
-            self.reloadCombo(self.comboTitle)
+            self.reloadComboTitle()
+            self.reloadTable()
 
-    def reloadCombo(self, cwidget):
-        cwidget.clear()
+    def reloadComboTitle(self):
+        self.comboTitle.clear()
         for i in tuneBook.tunes:
             tune = Tune()
             tune.load(i)
-            cwidget.addItem(tune.getField('T:'))
-        cwidget.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+            self.comboTitle.addItem(tune.getField('T:'))
+        self.comboTitle.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+
+    def reloadTable(self):
+        headerLabels = (_("Index"), _("Title"), _("Rhythm"), _("Meter"), _("Key"))
+        self.tableWidget.setColumnCount(len(headerLabels))
+        self.tableWidget.setRowCount(tuneBook.ntunes)
+
+        self.tableWidget.setHorizontalHeaderLabels(headerLabels)
+        row = 0
+        for i in tuneBook.tunes:
+            tune = Tune()
+            tune.load(i)
+            x = QTableWidgetItem(str(row))
+            t = QTableWidgetItem(tune.getField('T:'))
+            r = QTableWidgetItem(tune.getField('R:'))
+            m = QTableWidgetItem(tune.getField('M:'))
+            k = QTableWidgetItem(tune.getField('K:'))
+            data = (x, t, r, m, k)
+            column = 0
+            for j in range(len(data)):
+                self.tableWidget.setItem(row, column, data[j])
+                column += 1
+            row += 1
+        self.tableWidget.setColumnHidden(0,True)
+
+        self.tableWidget.resizeColumnsToContents()
 
     def setComboTitle(self):
         tuneBook.index = self.comboTitle.currentIndex()
@@ -436,7 +487,8 @@ class EditWindow(QMainWindow):
         tuneBook.save(self.textEdit.toPlainText())
         self.updateTitle()
         oldindex = self.comboTitle.currentIndex()
-        self.reloadCombo(self.comboTitle)
+        self.reloadComboTitle()
+        self.reloadTable()
         self.comboTitle.setCurrentIndex(oldindex)
 
     def restore(self):
@@ -449,7 +501,8 @@ class EditWindow(QMainWindow):
             return(0)
         else:
             tuneBook.restore()
-            self.reloadCombo(self.comboTitle)
+            self.reloadComboTitle()
+            self.reloadTable()
             self.showTune()
 
     def reindex(self):
@@ -458,7 +511,8 @@ class EditWindow(QMainWindow):
 
     def sort(self):
         tuneBook.sort()
-        self.reloadCombo(self.comboTitle)
+        self.reloadComboTitle()
+        self.reloadTable()
         self.showTune()
 
     def transpose(self):
@@ -473,19 +527,22 @@ class EditWindow(QMainWindow):
 
     def addTune(self, tune):
         tuneBook.add(tune)
-        self.reloadCombo(self.comboTitle)
+        self.reloadComboTitle()
+        self.reloadTable()
         self.lastTune()
 
     def insertTune(self, tune):
         pos = self.comboTitle.currentIndex()
         tuneBook.insert(pos, tune)
-        self.reloadCombo(self.comboTitle)
+        self.reloadComboTitle()
+        self.reloadTable()
         self.comboTitle.setCurrentIndex(pos)
 
     def removeTune(self):
         pos = self.comboTitle.currentIndex()
         tuneBook.remove(pos)
-        self.reloadCombo(self.comboTitle)
+        self.reloadComboTitle()
+        self.reloadTable()
         self.comboTitle.setCurrentIndex(pos - 1)
         self.showTune()
 
@@ -639,7 +696,6 @@ class EditWindow(QMainWindow):
         self.helpMenu.addAction(self.aboutQtAct)
 
     def createToolBars(self):
-
         self.navToolBar = self.addToolBar(_("Navigation"))
         self.navToolBar.addAction(self.firstAct)
         self.navToolBar.addAction(self.prevAct)
