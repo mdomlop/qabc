@@ -10,7 +10,7 @@ from PyQt5.QtGui import QIcon, QKeySequence, QFont
 from PyQt5.QtWidgets import (QWidget, QAction, QApplication, QComboBox,
                              QSpinBox, QMainWindow, QLabel, QFileDialog,
                              QTabWidget, QGridLayout, QVBoxLayout, QHBoxLayout,
-                             QMessageBox, QTextEdit, QPushButton, QRadioButton)
+                             QMessageBox, QTextEdit, QPushButton)
 from PyQt5.QtSvg import QSvgWidget
 from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer
 
@@ -133,8 +133,8 @@ class TuneBook():
         self.tunes.append(tune)
         self.ntunes += 1
 
-    def insert(self, pos, tune):  # At the position + 1
-        self.tunes.insert(pos, tune)
+    def addhere(self, pos, tune):  # At the position + 1
+        self.tunes.insert(pos + 1, tune)
         self.ntunes += 1
 
     def remove(self, pos):
@@ -165,7 +165,7 @@ class Tune():
             if i.startswith(key):
                 v = i.split(sep)[1]
                 return(v.strip())
-        return('')
+        return(None)
 
     def setField(self, key, value):
         lines = []
@@ -207,7 +207,6 @@ class EditWindow(QMainWindow):
 
         self.statusT = QLabel()
         self.statusR = QLabel()
-        self.statusK = QLabel()
         self.createActions()
 
         self.comboTitle = QComboBox()
@@ -315,12 +314,10 @@ class EditWindow(QMainWindow):
     def updateStatus(self):
         tune = Tune()
         tune.load(self.textEdit.toPlainText())
-        t = tune.getField('T:')
-        r = '(' + tune.getField('R:') + ')'
-        k = tune.getField('K:')
+        t = tune.getField('T')
+        r = tune.getField('R')
         self.statusT.setText(t)
         self.statusR.setText(r)
-        self.statusK.setText(k)
 
     def updateTitle(self):
         if self.textEdit.toPlainText() == tuneBook.tunes[tuneBook.index]:
@@ -407,7 +404,6 @@ class EditWindow(QMainWindow):
     def closeApp(self):
         sheetWin.close()
         aboutDialog.close()
-        formWin.close()
         self.close()
 
     def toggleTearOff(self):
@@ -469,24 +465,25 @@ class EditWindow(QMainWindow):
         self.textEdit.setText(tune.text)
 
     def showNewTuneForm(self):
-        formWin.show()
+        form.show()
 
     def addTune(self, tune):
         tuneBook.add(tune)
         self.reloadCombo(self.comboTitle)
         self.lastTune()
 
-    def insertTune(self, tune):
+    def addTuneHere(self):
+        i = self.comboTitle.currentIndex()
+        tune = 'X:' + str(i) + '\n'
         pos = self.comboTitle.currentIndex()
-        tuneBook.insert(pos, tune)
+        tuneBook.addhere(pos, tune)
         self.reloadCombo(self.comboTitle)
-        self.comboTitle.setCurrentIndex(pos)
+        self.comboTitle.setCurrentIndex(i + 1)
 
     def removeTune(self):
         pos = self.comboTitle.currentIndex()
         tuneBook.remove(pos)
         self.reloadCombo(self.comboTitle)
-        self.comboTitle.setCurrentIndex(pos - 1)
         self.showTune()
 
     def createActions(self):
@@ -562,6 +559,12 @@ class EditWindow(QMainWindow):
                                statusTip=_("Sort by title"),
                                triggered=self.sort)
 
+        self.transposeAct = QAction(QIcon.fromTheme('database-index'),
+                                    _("&Transpose"),
+                                    self, shortcut='Ctrl+J',
+                                    statusTip=_("Transpose by semitones"),
+                                    triggered=self.transpose)
+
         self.restoreAct = QAction(QIcon.fromTheme('restoration'),
                                   _("&Restore"),
                                   self, shortcut='Ctrl+Alt+R',
@@ -607,22 +610,18 @@ class EditWindow(QMainWindow):
         self.togglePlayAct.setCheckable(True)
 
     def createMenus(self):
-        self.fileMenu = self.menuBar().addMenu(_("&Tunebook"))
+        self.fileMenu = self.menuBar().addMenu(_("&File"))
         self.fileMenu.addAction(self.openAct)
-        self.fileMenu.addAction(self.addTuneAct)
-        self.fileMenu.addAction(self.reindexAct)
-        self.fileMenu.addAction(self.sortAct)
+        self.fileMenu.addAction(self.copyAct)
         self.fileMenu.addAction(self.saveAct)
-        self.fileMenu.addAction(self.removeTuneAct)
         self.fileMenu.addSeparator()
+        self.fileMenu.addAction(self.addTuneAct)
+        self.fileMenu.addAction(self.removeTuneAct)
         self.fileMenu.addAction(self.restoreAct)
         self.fileMenu.addSeparator()
+        self.fileMenu.addAction(self.exportMIDIAct)
+        self.fileMenu.addSeparator()
         self.fileMenu.addAction(self.exitAct)
-
-        self.toolMenu = self.menuBar().addMenu(_("&Tune"))
-        self.toolMenu.addAction(self.copyAct)
-        self.toolMenu.addSeparator()
-        self.toolMenu.addAction(self.exportMIDIAct)
 
         self.navMenu = self.menuBar().addMenu(_("&Navigation"))
         self.navMenu.addAction(self.prevAct)
@@ -633,6 +632,11 @@ class EditWindow(QMainWindow):
         self.viewMenu = self.menuBar().addMenu(_("View"))
         self.viewMenu.addAction(self.toggleShowSheetAct)
         self.viewMenu.addAction(self.toggleTearOffAct)
+
+        self.toolMenu = self.menuBar().addMenu(_("&Tools"))
+        self.toolMenu.addAction(self.reindexAct)
+        self.toolMenu.addAction(self.sortAct)
+        self.toolMenu.addAction(self.transposeAct)
 
         self.helpMenu = self.menuBar().addMenu(_("&Help"))
         self.helpMenu.addAction(self.aboutAct)
@@ -652,9 +656,8 @@ class EditWindow(QMainWindow):
         self.playToolBar.addWidget(self.comboTitle)
 
     def createStatusBar(self):
-        self.statusBar().addWidget(self.statusT, Qt.AlignLeft)
-        self.statusBar().addWidget(self.statusR, Qt.AlignRight)
-        self.statusBar().addWidget(self.statusK, Qt.AlignRight)
+        self.statusBar().addWidget(self.statusR, Qt.AlignLeft)
+        self.statusBar().addWidget(self.statusT, Qt.AlignRight)
         self.statusBar().addWidget(self.transposeSpinBox, Qt.AlignRight)
         self.statusBar().addWidget(self.comboTempo, Qt.AlignRight)
 
@@ -702,12 +705,8 @@ class NewTuneForm(QWidget):
     def __init__(self, parent=None):
         super(NewTuneForm, self).__init__(parent)
 
-        self.setWindowTitle(PROGRAM_NAME + ' ' + _("(New tune)"))
-        self.setWindowIcon(QIcon.fromTheme(EXECUTABLE_NAME))
-
         self.textEdit = QTextEdit()
-        label = QLabel(_("New tune"))
-        self.resize(QSize(500, 400))
+        self.label = QLabel(_("New tune"))
 
         btnAccept = QPushButton(_("Accept"), self)
         btnAccept.setIcon(QIcon.fromTheme("dialog-ok"))
@@ -719,38 +718,19 @@ class NewTuneForm(QWidget):
         btnClose.setToolTip(_("Exit without applying the changes"))
         btnClose.clicked.connect(self.close)
 
-        btnLayout = QHBoxLayout()
-        btnLayout.addWidget(btnClose)
-        btnLayout.addWidget(btnAccept)
-
-        self.addRadioButton = QRadioButton(self)
-        self.addRadioButton.setToolTip(_("Add to the end of tunebook"))
-        self.addRadioButton.setText(_("Add"))
-        self.insertRadioButton = QRadioButton(self)
-        self.insertRadioButton.setText(_("Insert"))
-        self.insertRadioButton.setToolTip(_("Insert before current tune"))
-        self.addRadioButton.setChecked(True)
-
-        radioLayout = QHBoxLayout()
-        radioLayout.addWidget(self.addRadioButton)
-        radioLayout.addWidget(self.insertRadioButton)
-        radioLayout.addStretch()
-
         mainLayout = QGridLayout()
-        mainLayout.addWidget(label, 0, 0)
-        mainLayout.addLayout(radioLayout, 1, 0)
-        mainLayout.addWidget(self.textEdit, 2, 0)
-        mainLayout.addLayout(btnLayout,3, 0, Qt.AlignRight)
+        mainLayout.addWidget(self.label, 0, 0)
+        mainLayout.addWidget(self.textEdit, 1, 0)
+        mainLayout.addWidget(btnClose, 2, 0, Qt.AlignRight)
+        mainLayout.addWidget(btnAccept, 2, 1, Qt.AlignRight)
         self.setLayout(mainLayout)
 
     def accept(self):
-        tune = self.textEdit.toPlainText()
-        if self.addRadioButton.isChecked():
-            editWin.addTune(tune)
-        else:
-            editWin.insertTune(tune)
-        self.textEdit.clear()
+        editWin.addTune(self.textEdit.toPlainText())
         self.close()
+
+    def clear(self):
+        self.edit.clear()
 
 
 
@@ -908,6 +888,6 @@ if __name__ == '__main__':
     editWin = EditWindow()
     aboutDialog = AboutDialog()
     sheetWin = SheetWindow()
-    formWin = NewTuneForm()
+    form = NewTuneForm()
     editWin.show()
     sys.exit(app.exec_())

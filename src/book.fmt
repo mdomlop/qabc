@@ -1,0 +1,27 @@
+
+%  Emulates the Jazz Fakebook style. 
+%  Use caps for title, parts or Q: for tempo.
+
+   scale 0.50
+   topmargin 1.5cm
+   leftmargin 0.5cm
+   rightmargin 0.5cm
+   titlefont Serif-Roman 18
+   subtitlefont Serif-Italic 10
+   titleleft false
+   titlecaps false
+   composerfont Serif-Italic 9
+   composerspace 0.3cm
+   partsfont Serif-Bold 10
+   vocalfont Serif-Bold 13
+   musicspace    0.7cm
+   gchordfont Serif 12
+   parskipfac 1.0
+   staffwidth 20cm
+   staffsep   45
+   maxshrink  0.65
+   
+   lineskipfac 1.1
+   parskipfac 0
+   textspace 0.2cm
+   textfont Times-Roman 10
