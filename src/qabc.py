@@ -399,7 +399,7 @@ class TranslationTab(QWidget):
 
 class TuneTable(QWidget):
 
-    X, T, R, K = range(4)
+    X, T, R, M, K = range(5)  # Column indices
 
     def __init__(self):
         super(TuneTable, self).__init__()
@@ -415,7 +415,6 @@ class TuneTable(QWidget):
         self.proxyView.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.proxyView.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.proxyView.setSelectionMode(QAbstractItemView.SingleSelection)
-        #self.proxyView.setEditable(False)
         self.proxyView.selectionModel().selectionChanged.connect(self.itemSelected)
 
         self.filterCaseSensitivityCheckBox = QCheckBox("Case sensitive")
@@ -445,12 +444,9 @@ class TuneTable(QWidget):
         mainLayout.addWidget(self.proxyView)
         self.setLayout(mainLayout)
 
-        #self.resize(500, 450)
-
         self.proxyView.sortByColumn(self.T, Qt.AscendingOrder)
         self.filterColumnComboBox.setCurrentIndex(0)
 
-        #self.filterPatternLineEdit.setText("Andy|Grace")
         self.filterCaseSensitivityCheckBox.setChecked(False)
 
     def setSourceModel(self, model):
@@ -475,11 +471,11 @@ class TuneTable(QWidget):
     def createABCModel(self):
         model = QStandardItemModel(0, 5)
 
-        model.setHeaderData(0, Qt.Horizontal, "Index")
-        model.setHeaderData(1, Qt.Horizontal, "Title")
-        model.setHeaderData(2, Qt.Horizontal, "Rhythm")
-        model.setHeaderData(3, Qt.Horizontal, "Meter")
-        model.setHeaderData(4, Qt.Horizontal, "Key")
+        model.setHeaderData(self.X, Qt.Horizontal, "Index")
+        model.setHeaderData(self.T, Qt.Horizontal, "Title")
+        model.setHeaderData(self.R, Qt.Horizontal, "Rhythm")
+        model.setHeaderData(self.M, Qt.Horizontal, "Meter")
+        model.setHeaderData(self.K, Qt.Horizontal, "Key")
 
         x = 0
         for i in tuneBook.tunes:
@@ -491,23 +487,23 @@ class TuneTable(QWidget):
             k = tune.getField('K:')
 
             model.insertRow(0)
-            model.setData(model.index(0, 0), x)
-            model.setData(model.index(0, 1), t)
-            model.setData(model.index(0, 2), r)
-            model.setData(model.index(0, 3), m)
-            model.setData(model.index(0, 4), k)
+            model.setData(model.index(0, self.X), x)
+            model.setData(model.index(0, self.T), t)
+            model.setData(model.index(0, self.R), r)
+            model.setData(model.index(0, self.M), m)
+            model.setData(model.index(0, self.K), k)
             x += 1
         return model
 
     def getTableViewValue(self,row, column, widget):
-        choords = widget.model().index(row, column)
-        return(widget.model().data(choords))
+        coordinates = widget.model().index(row, column)
+        return(widget.model().data(coordinates))
 
     def itemSelected(self):
         row = self.proxyView.currentIndex().row()
-        column = 0
+        column = self.X
         index = self.getTableViewValue(row, column, self.proxyView)
-        if index >= 0:  # Prevent None selected
+        if index and index >= 0:  # Prevent Nonetype selected and allow 0 index
             tuneBook.index = int(index)
             mainWindow.showTune()
 
@@ -548,7 +544,6 @@ class MainWindow(QMainWindow):
         self.svgWidget = QSvgWidget()
         self.svgPalette = self.svgWidget.palette()
         self.svgPalette.setColor(self.svgWidget.backgroundRole(), Qt.white)
-
 
         self.svgScroll = QScrollArea()
         self.svgScroll.setWidget(self.svgWidget)
@@ -645,14 +640,12 @@ class MainWindow(QMainWindow):
         else:
             self.logView.append(_("SVG OK"))
         self.svgWidget.load(svg.stdout)
-        print(self.svgWidget.sizeHint())
         self.svgWidget.resize(self.svgWidget.sizeHint())
         self.svgWidget.setAutoFillBackground(True)
         self.svgWidget.setPalette(self.svgPalette)
 
     def exportMIDI(self):
         outfile = self.midi.fileName()
-        print(outfile)
         buff = self.textEdit.toPlainText().encode()
 
         if not self.comboTempo.currentIndex():
@@ -673,7 +666,6 @@ class MainWindow(QMainWindow):
         defname = tune.getField('T:') + '.mid'
         select = QFileDialog.getSaveFileName(self, _("Export to MIDI file"),
                                              defname)[0]
-        print(select)
         if select:
             f = QFile(outfile)
             self.midi.copy(select)
