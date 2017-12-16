@@ -1,29 +1,24 @@
 #!/usr/bin/python3
-# Depends: abcm2ps, abc2midi, timidity, ffmpeg, qmmp
+
 import os
 import gettext
 import subprocess
 import uuid
 
-from PyQt5.QtCore import (QFile, QSettings, QSize, QUrl, Qt, QT_VERSION_STR,
-                          QSortFilterProxyModel)
-from PyQt5.QtGui import QIcon, QKeySequence, QFont
-from PyQt5.QtWidgets import (QWidget, QAction, QApplication, QComboBox,
-                             QSpinBox, QMainWindow, QLabel, QFileDialog,
-                             QTabWidget, QGridLayout, QVBoxLayout, QHBoxLayout,
-                             QMessageBox, QTextEdit, QPushButton, QRadioButton,
-                             QTableWidget,QTableWidgetItem, QAbstractItemView, QSplitter)
-from PyQt5.QtSvg import QSvgWidget
-from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
+from PyQt5.QtSvg import *
+from PyQt5.QtMultimedia import *
 
 PROGRAM_NAME = "Qabc"
 EXECUTABLE_NAME = "qabc"
 
-gettext.translation("qabc", localedir="/usr/share/locale",
+gettext.translation(EXECUTABLE_NAME, localedir="/usr/share/locale",
                     fallback=True).install()
 
 DESCRIPTION = _("A abc music files manager")
-VERSION = "0.1a"
+VERSION = "0.2a"
 AUTHOR = "Manuel Domínguez López"  # See AUTHORS file
 MAIL = "mdomlop@gmail.com"
 SOURCE = "https://github.com/mdomlop/qabc"
@@ -50,12 +45,11 @@ License: GPL-3.0+
  Public License version 3 can be found in "/usr/share/common-licenses/GPL-3".
 '''
 
-X, T, R, K = range(4)
-
 class TuneBook():
     def __init__(self):
         self.tunes = []
         self.index = 0
+        self.path = None
 
     def loadFile(self, path):
         ''' Adds a tune file to the tunes DB '''
@@ -99,8 +93,7 @@ class TuneBook():
                 for i in self.tunes:
                     f.write(i + '\n')
         except:
-            print(
-                _("I can't save the tunebook file"))
+            print("I can't save the tunebook file")
 
         f.close()
         self.tunesSaved[self.index] = self.tunes[self.index]
@@ -203,557 +196,6 @@ class Tune():
         self.text = t.stdout.decode()
 
 
-class EditWindow(QMainWindow):
-    def __init__(self):
-        super(EditWindow, self).__init__()
-
-        self.uuid = str(uuid.uuid4())
-        self.tmpdir = os.path.abspath(os.path.join(os.sep, 'tmp'))
-        self.tmpfile = os.path.join(self.tmpdir, PROGRAM_NAME + self.uuid)
-
-        self.statusT = QLabel()
-        self.statusR = QLabel()
-        self.statusK = QLabel()
-        self.createActions()
-
-        self.comboTitle = QComboBox()
-        self.comboTitle.setEditable(False)
-        self.comboTitle.currentIndexChanged[str].connect(self.setComboTitle)
-
-        self.comboTempo = QComboBox()
-        self.comboTempo.setEditable(False)
-        self.comboTempo.currentIndexChanged[str].connect(self.updateMIDI)
-        self.comboTempo.addItem(_("Default"))
-        for i in range(60, 305, 5):
-            self.comboTempo.addItem(str(i))
-
-        self.transposeSpinBox = QSpinBox()
-        self.transposeSpinBox.setRange(-100, 100)
-        self.transposeSpinBox.setSingleStep(1)
-        self.transposeSpinBox.setValue(0)
-        self.transposeSpinBox.valueChanged.connect(self.transpose)
-
-        self.svgWidget = QSvgWidget()
-        self.svgWidget.setAutoFillBackground(True)
-        p = self.svgWidget.palette()
-        p.setColor(self.svgWidget.backgroundRole(), Qt.white)
-        self.svgWidget.setPalette(p)
-
-        self.mediaPlayer = QMediaPlayer()
-
-        self.textEdit = QTextEdit()
-        self.textEdit.textChanged.connect(self.updateInterface)
-
-        self.tableWidget = QTableWidget()
-        self.tableWidget.setSortingEnabled(True)
-        self.tableWidget.verticalHeader().setVisible(False)
-
-        self.tableWidget.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.tableWidget.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.tableWidget.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.tableWidget.itemSelectionChanged.connect(self.debug)
-
-        self.splitter = QSplitter()
-        self.splitter.setOrientation(Qt.Vertical)
-        self.splitter.addWidget(self.tableWidget)
-        self.splitter.addWidget(self.textEdit)
-
-        self.setCentralWidget(self.splitter)
-
-        self.createMenus()
-        self.createToolBars()
-        self.createStatusBar()
-
-        self.readSettings()
-
-        try:
-            f = sys.argv[1]
-        except:
-            f = None
-
-        if f:
-            self.openFile(f)
-
-    def debug(self):
-        r = self.tableWidget.currentRow()
-        index = self.tableWidget.item(r,0).text()
-        self.comboTitle.setCurrentIndex(int(index))
-
-    def openFile(self, f=None):
-        if f:
-            select = f
-        else:
-            select = QFileDialog.getOpenFileName(self, _("Open file"))[0]
-
-        if select:
-            tuneBook.loadFile(select)
-            self.showTune()
-            for i in tuneBook.tunes:
-                tuneBook.tunesSaved.append(i)
-            self.reloadComboTitle()
-            self.reloadTable()
-
-    def reloadComboTitle(self):
-        self.comboTitle.clear()
-        for i in tuneBook.tunes:
-            tune = Tune()
-            tune.load(i)
-            self.comboTitle.addItem(tune.getField('T:'))
-        self.comboTitle.setSizeAdjustPolicy(QComboBox.AdjustToContents)
-
-    def reloadTable(self):
-        headerLabels = (_("Index"), _("Title"), _("Rhythm"), _("Meter"), _("Key"))
-        self.tableWidget.setColumnCount(len(headerLabels))
-        self.tableWidget.setRowCount(tuneBook.ntunes)
-
-        self.tableWidget.setHorizontalHeaderLabels(headerLabels)
-        row = 0
-        for i in tuneBook.tunes:
-            tune = Tune()
-            tune.load(i)
-            x = QTableWidgetItem(str(row))
-            t = QTableWidgetItem(tune.getField('T:'))
-            r = QTableWidgetItem(tune.getField('R:'))
-            m = QTableWidgetItem(tune.getField('M:'))
-            k = QTableWidgetItem(tune.getField('K:'))
-            data = (x, t, r, m, k)
-            column = 0
-            for j in range(len(data)):
-                self.tableWidget.setItem(row, column, data[j])
-                column += 1
-            row += 1
-        self.tableWidget.setColumnHidden(0,True)
-
-        self.tableWidget.resizeColumnsToContents()
-
-    def setComboTitle(self):
-        tuneBook.index = self.comboTitle.currentIndex()
-        self.showTune()
-
-    def firstTune(self):
-        self.comboTitle.setCurrentIndex(0)
-
-    def lastTune(self):
-        self.comboTitle.setCurrentIndex(self.comboTitle.count() - 1)
-
-    def nextTune(self):
-        self.comboTitle.setCurrentIndex(self.comboTitle.currentIndex() + 1)
-
-    def prevTune(self):
-        self.comboTitle.setCurrentIndex(self.comboTitle.currentIndex() - 1)
-
-    def copyTune(self):
-        self.textEdit.selectAll()
-        self.textEdit.copy()
-        self.textEdit.clearFocus()
-        self.copyAct.setEnabled(not self.isCopied())
-
-    def isCopied(self):
-        if QApplication.clipboard().text() == self.textEdit.toPlainText():
-            return(True)
-        return(False)
-
-    def isFirst(self):
-        if tuneBook.index == 0:
-            return(True)
-        return(False)
-
-    def isLast(self):
-        if tuneBook.index == tuneBook.ntunes - 1:
-            return(True)
-        return(False)
-
-    def updateStatus(self):
-        tune = Tune()
-        tune.load(self.textEdit.toPlainText())
-        t = tune.getField('T:')
-        r = '(' + tune.getField('R:') + ')'
-        k = tune.getField('K:')
-        self.statusT.setText(t)
-        self.statusR.setText(r)
-        self.statusK.setText(k)
-
-    def updateTitle(self):
-        if self.textEdit.toPlainText() == tuneBook.tunes[tuneBook.index]:
-            self.setWindowTitle(PROGRAM_NAME)
-        else:
-            self.setWindowTitle(PROGRAM_NAME + '*')
-
-    def updateSvg(self):
-        if not self.toggleShowSheetAct.isChecked():
-            return(0)
-        buff = self.textEdit.toPlainText().encode()
-        svg = subprocess.run(
-            ('abcm2ps', '-q', '-g', '-', '-O', '-'),
-            input=buff, stdout=subprocess.PIPE)
-        self.svgWidget.load(svg.stdout)
-        sheetWin.resize(self.svgWidget.sizeHint())
-
-    def exportMIDI(self):
-        outfile = self.tmpfile + '.mid'
-        print(outfile)
-        buff = self.textEdit.toPlainText().encode()
-
-        if not self.comboTempo.currentIndex():
-            cmd = ('abc2midi', '-', '-silent', '-o', outfile)
-        else:
-            tempo = self.comboTempo.currentText()
-            cmd = ('abc2midi', '-', '-silent', '-Q', tempo, '-o', outfile)
-
-        subprocess.run(cmd, input=buff)
-        return(outfile)
-
-    def exportMIDItoFile(self):
-        outfile = self.exportMIDI()
-        tune = Tune()
-        tune.load(self.textEdit.toPlainText())
-        defname = tune.getField('T:') + '.mid'
-        select = QFileDialog.getSaveFileName(self, _("Export to MIDI file"),
-                                             defname)[0]
-        print(select)
-        if select:
-            f = QFile(outfile)
-            f.copy(select)
-            f.close()
-
-    def updateMIDI(self):
-        if not self.togglePlayAct.isChecked():
-            return(0)
-        midi = self.exportMIDI()
-        url = QUrl.fromLocalFile(midi)
-        mediaContent = QMediaContent(url)
-        self.mediaPlayer.setMedia(mediaContent)
-        if self.togglePlayAct.isChecked():
-            self.mediaPlayer.play()
-
-    def updateInterface(self):
-        self.firstAct.setEnabled(not self.isFirst())
-        self.prevAct.setEnabled(not self.isFirst())
-
-        self.lastAct.setEnabled(not self.isLast())
-        self.nextAct.setEnabled(not self.isLast())
-
-        self.updateStatus()
-        self.updateTitle()
-        self.updateSvg()
-        self.updateMIDI()
-
-    def showTune(self):
-        if not tuneBook.tunes:
-            return(0)
-        self.comboTempo.setCurrentIndex(0)
-        self.transposeSpinBox.setValue(0)
-        self.textEdit.setText(tuneBook.tunes[tuneBook.index])
-
-    def showAbout(self):
-        aboutDialog.show()
-
-    def toggleShowSheet(self):
-        if self.toggleShowSheetAct.isChecked():
-            self.updateSvg()
-            sheetWin.show()
-        else:
-            sheetWin.hide()
-
-    def closeApp(self):
-        sheetWin.close()
-        aboutDialog.close()
-        formWin.close()
-        self.close()
-
-    def toggleTearOff(self):
-        if self.toggleTearOffAct.isChecked():
-            self.fileMenu.setTearOffEnabled(True)
-            self.navMenu.setTearOffEnabled(True)
-            self.viewMenu.setTearOffEnabled(True)
-            self.helpMenu.setTearOffEnabled(True)
-        else:
-            self.fileMenu.setTearOffEnabled(False)
-            self.navMenu.setTearOffEnabled(False)
-            self.viewMenu.setTearOffEnabled(False)
-            self.helpMenu.setTearOffEnabled(False)
-
-    def togglePlay(self):
-        if self.togglePlayAct.isChecked():
-            self.updateMIDI()
-            self.mediaPlayer.stop()
-            self.mediaPlayer.play()
-        else:
-            self.mediaPlayer.stop()
-
-    def save(self):
-        ''' Copy current text to tunebook tune and write tunebook to disk.
-        If tunebook was reindexed or reordered, it will save such changes.'''
-        tuneBook.save(self.textEdit.toPlainText())
-        self.updateTitle()
-        oldindex = self.comboTitle.currentIndex()
-        self.reloadComboTitle()
-        self.reloadTable()
-        self.comboTitle.setCurrentIndex(oldindex)
-
-    def restore(self):
-        '''Loads backup to tunebook. But not save it.'''
-        q = _("Are you sure you want to restore?\nAll changes will be lost.")
-        buttonReply = QMessageBox.question(self, _("Restore"), q,
-                                           QMessageBox.Yes | QMessageBox.No,
-                                           QMessageBox.No)
-        if buttonReply == QMessageBox.No:
-            return(0)
-        else:
-            tuneBook.restore()
-            self.reloadComboTitle()
-            self.reloadTable()
-            self.showTune()
-
-    def reindex(self):
-        tuneBook.reindex()
-        self.showTune()
-
-    def sort(self):
-        tuneBook.sort()
-        self.reloadComboTitle()
-        self.reloadTable()
-        self.showTune()
-
-    def transpose(self):
-        semitones = self.transposeSpinBox.value()
-        tune = Tune()
-        tune.load(self.textEdit.toPlainText())
-        tune.transpose(semitones)
-        self.textEdit.setText(tune.text)
-
-    def showNewTuneForm(self):
-        formWin.show()
-
-    def addTune(self, tune):
-        tuneBook.add(tune)
-        self.reloadComboTitle()
-        self.reloadTable()
-        self.lastTune()
-
-    def insertTune(self, tune):
-        pos = self.comboTitle.currentIndex()
-        tuneBook.insert(pos, tune)
-        self.reloadComboTitle()
-        self.reloadTable()
-        self.comboTitle.setCurrentIndex(pos)
-
-    def removeTune(self):
-        pos = self.comboTitle.currentIndex()
-        tuneBook.remove(pos)
-        self.reloadComboTitle()
-        self.reloadTable()
-        self.comboTitle.setCurrentIndex(pos - 1)
-        self.showTune()
-
-    def createActions(self):
-        self.firstAct = QAction(QIcon.fromTheme('go-first'),
-                                _("&First"),
-                                self, shortcut=QKeySequence.MoveToStartOfLine,
-                                statusTip=_("Show first tune"),
-                                triggered=self.firstTune)
-
-        self.lastAct = QAction(QIcon.fromTheme('go-last'),
-                               _("&Last"),
-                               self, shortcut=QKeySequence.MoveToEndOfLine,
-                               statusTip=_("Show last tune"),
-                               triggered=self.lastTune)
-
-        self.nextAct = QAction(QIcon.fromTheme('go-next'),
-                               _("&Next"),
-                               self, shortcut=QKeySequence.MoveToNextPage,
-                               statusTip=_("Show next tune"),
-                               triggered=self.nextTune)
-
-        self.prevAct = QAction(QIcon.fromTheme('go-previous'),
-                               _("&Previous"),
-                               self, shortcut=QKeySequence.MoveToPreviousPage,
-                               statusTip=_("Show previous tune"),
-                               triggered=self.prevTune)
-
-        self.exitAct = QAction(QIcon.fromTheme('window-close'), _("E&xit"),
-                               self, shortcut=QKeySequence.Quit,
-                               statusTip=_("Exit the application"),
-                               triggered=self.closeApp)
-
-        self.copyAct = QAction(QIcon.fromTheme('edit-copy'),
-                               _("&Copy"),
-                               self, shortcut=QKeySequence.Copy,
-                               statusTip=_("Copy tune to the clipboard"),
-                               triggered=self.copyTune)
-
-        self.aboutAct = QAction(QIcon.fromTheme(EXECUTABLE_NAME),
-                                _("&About") + " " + PROGRAM_NAME, self,
-                                statusTip=_("Information about"
-                                            " this application"),
-                                triggered=self.showAbout)
-
-        self.aboutQtAct = QAction(QIcon.fromTheme('help-about'),
-                                  _("About &Qt"), self,
-                                  statusTip=_("Show information about"
-                                              " the Qt library"),
-                                  triggered=QApplication.instance().aboutQt)
-
-        self.openAct = QAction(QIcon.fromTheme('document-open'),
-                               _("&Open"),
-                               self, shortcut=QKeySequence.Open,
-                               statusTip=_("Open a tune file"),
-                               triggered=self.openFile)
-
-        self.toggleShowSheetAct = QAction(QIcon.fromTheme('view-media-lyrics'),
-                                          _("&Show sheet music"),
-                                          self, shortcut='F4',
-                                          statusTip=_("View sheet music"),
-                                          triggered=self.toggleShowSheet)
-        self.toggleShowSheetAct.setCheckable(True)
-
-        self.reindexAct = QAction(QIcon.fromTheme('format-list-ordered'),
-                                  _("&Indexize"),
-                                  self, shortcut='Ctrl+I',
-                                  statusTip=_("Reformat indices"),
-                                  triggered=self.reindex)
-
-        self.sortAct = QAction(QIcon.fromTheme('sort-name'),
-                               _("&Sort"),
-                               self, shortcut='Ctrl+J',
-                               statusTip=_("Sort by title"),
-                               triggered=self.sort)
-
-        self.restoreAct = QAction(QIcon.fromTheme('restoration'),
-                                  _("&Restore"),
-                                  self, shortcut='Ctrl+Alt+R',
-                                  statusTip=_("Restore tunebook from backup"),
-                                  triggered=self.restore)
-
-        self.addTuneAct = QAction(QIcon.fromTheme('list-add'),
-                                  _("&Add tune"),
-                                  self, shortcut='Ctrl+Alt+A',
-                                  statusTip=_("Add new tune"),
-                                  triggered=self.showNewTuneForm)
-
-        self.removeTuneAct = QAction(QIcon.fromTheme('list-remove'),
-                                  _("&Remove tune"),
-                                  self, shortcut='Ctrl+Alt+D',
-                                  statusTip=_("Remove tune"),
-                                  triggered=self.removeTune)
-
-        self.toggleTearOffAct = QAction(QIcon.fromTheme('application-menu'),
-                                        _("&Tear off menus"), self,
-                                        shortcut=QKeySequence.InsertLineSeparator,
-                                        statusTip=_("Tear off menus"),
-                                        triggered=self.toggleTearOff)
-        self.toggleTearOffAct.setCheckable(True)
-
-        self.saveAct = QAction(QIcon.fromTheme('document-save'),
-                               _("&Save"),
-                               self, shortcut=QKeySequence.Save,
-                               statusTip=_("Save tunes"),
-                               triggered=self.save)
-
-        self.exportMIDIAct = QAction(QIcon.fromTheme('document-export'),
-                               _("&Export MIDI"),
-                               self, shortcut='Ctrl+M',
-                               statusTip=_("Export tune as MIDI file"),
-                               triggered=self.exportMIDItoFile)
-
-        self.togglePlayAct = QAction(QIcon.fromTheme('media-playback-start'),
-                                     _("&Play"),
-                                     self, shortcut='Alt+Intro',
-                                     statusTip=_("Play tune"),
-                                     triggered=self.togglePlay)
-        self.togglePlayAct.setCheckable(True)
-
-    def createMenus(self):
-        self.fileMenu = self.menuBar().addMenu(_("&Tunebook"))
-        self.fileMenu.addAction(self.openAct)
-        self.fileMenu.addAction(self.addTuneAct)
-        self.fileMenu.addAction(self.reindexAct)
-        self.fileMenu.addAction(self.sortAct)
-        self.fileMenu.addAction(self.saveAct)
-        self.fileMenu.addAction(self.removeTuneAct)
-        self.fileMenu.addSeparator()
-        self.fileMenu.addAction(self.restoreAct)
-        self.fileMenu.addSeparator()
-        self.fileMenu.addAction(self.exitAct)
-
-        self.toolMenu = self.menuBar().addMenu(_("&Tune"))
-        self.toolMenu.addAction(self.copyAct)
-        self.toolMenu.addSeparator()
-        self.toolMenu.addAction(self.exportMIDIAct)
-
-        self.navMenu = self.menuBar().addMenu(_("&Navigation"))
-        self.navMenu.addAction(self.prevAct)
-        self.navMenu.addAction(self.nextAct)
-        self.navMenu.addAction(self.firstAct)
-        self.navMenu.addAction(self.lastAct)
-
-        self.viewMenu = self.menuBar().addMenu(_("View"))
-        self.viewMenu.addAction(self.toggleShowSheetAct)
-        self.viewMenu.addAction(self.toggleTearOffAct)
-
-        self.helpMenu = self.menuBar().addMenu(_("&Help"))
-        self.helpMenu.addAction(self.aboutAct)
-        self.helpMenu.addAction(self.aboutQtAct)
-
-    def createToolBars(self):
-        self.navToolBar = self.addToolBar(_("Navigation"))
-        self.navToolBar.addAction(self.firstAct)
-        self.navToolBar.addAction(self.prevAct)
-        self.navToolBar.addAction(self.nextAct)
-        self.navToolBar.addAction(self.lastAct)
-
-        self.playToolBar = self.addToolBar(_("Play"))
-        self.playToolBar.addAction(self.toggleShowSheetAct)
-        self.playToolBar.addAction(self.togglePlayAct)
-        self.playToolBar.addWidget(self.comboTitle)
-
-    def createStatusBar(self):
-        self.statusBar().addWidget(self.statusT, Qt.AlignLeft)
-        self.statusBar().addWidget(self.statusR, Qt.AlignRight)
-        self.statusBar().addWidget(self.statusK, Qt.AlignRight)
-        self.statusBar().addWidget(self.transposeSpinBox, Qt.AlignRight)
-        self.statusBar().addWidget(self.comboTempo, Qt.AlignRight)
-
-    def readSettings(self):
-        settings = QSettings(PROGRAM_NAME, _("Settings"))
-        size = settings.value("size", QSize(700, 400))
-        self.setWindowTitle(PROGRAM_NAME)
-        self.setWindowIcon(QIcon.fromTheme(EXECUTABLE_NAME))
-        self.resize(size)
-
-
-class SheetWindow(QMainWindow):
-    def __init__(self, parent=None):
-        super(SheetWindow, self).__init__(parent)
-
-        self.setWindowTitle(PROGRAM_NAME + ' ' + _("(Sheet music)"))
-        self.setWindowIcon(QIcon.fromTheme(EXECUTABLE_NAME))
-
-        self.setCentralWidget(editWin.svgWidget)
-        self.statusBar = editWin.statusBar
-
-        self.toggleShowEditWinAct = QAction(QIcon.fromTheme('window'),
-                                            _("&Show edit window"),
-                                            self, shortcut='F3',
-                                            statusTip=_("Show edit window"),
-                                            triggered=self.toggleShowEditWin)
-        self.toggleShowEditWinAct.setCheckable(True)
-
-        self.navToolBar = self.addToolBar(_("Navigation"))
-        self.navToolBar.addAction(self.toggleShowEditWinAct)
-        self.navToolBar.addAction(editWin.toggleShowSheetAct)
-        self.navToolBar.addAction(editWin.firstAct)
-        self.navToolBar.addAction(editWin.prevAct)
-        self.navToolBar.addAction(editWin.nextAct)
-        self.navToolBar.addAction(editWin.lastAct)
-
-    def toggleShowEditWin(self):
-        if self.toggleShowEditWinAct.isChecked():
-            editWin.show()
-        else:
-            editWin.hide()
-
-
 class NewTuneForm(QWidget):
     def __init__(self, parent=None):
         super(NewTuneForm, self).__init__(parent)
@@ -802,9 +244,9 @@ class NewTuneForm(QWidget):
     def accept(self):
         tune = self.textEdit.toPlainText()
         if self.addRadioButton.isChecked():
-            editWin.addTune(tune)
+            mainWindow.addTune(tune)
         else:
-            editWin.insertTune(tune)
+            mainWindow.insertTune(tune)
         self.textEdit.clear()
         self.close()
 
@@ -955,15 +397,673 @@ class TranslationTab(QWidget):
         self.setLayout(mainLayout)
 
 
+class TuneTable(QWidget):
+
+    X, T, R, K = range(4)
+
+    def __init__(self):
+        super(TuneTable, self).__init__()
+
+        self.proxyModel = QSortFilterProxyModel()
+        self.proxyModel.setDynamicSortFilter(True)
+        self.proxyModel.setFilterKeyColumn(self.T)
+
+        self.proxyView = QTableView()
+        self.proxyView.setModel(self.proxyModel)
+        self.proxyView.setSortingEnabled(True)
+        self.proxyView.verticalHeader().setVisible(False)
+        self.proxyView.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.proxyView.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.proxyView.setSelectionMode(QAbstractItemView.SingleSelection)
+        #self.proxyView.setEditable(False)
+        self.proxyView.selectionModel().selectionChanged.connect(self.itemSelected)
+
+        self.filterCaseSensitivityCheckBox = QCheckBox("Case sensitive")
+
+        self.filterPatternLineEdit = QLineEdit()
+        self.filterPatternLineEdit.setClearButtonEnabled(True)
+        self.filterPatternLabel = QLabel("&Filter:")
+        self.filterPatternLabel.setBuddy(self.filterPatternLineEdit)
+
+        self.filterSyntaxComboBox = QComboBox()
+        self.filterSyntaxComboBox.addItem("Fixed string", QRegExp.FixedString)
+        self.filterSyntaxComboBox.addItem("Wildcard", QRegExp.Wildcard)
+        self.filterSyntaxComboBox.addItem("Regular expression", QRegExp.RegExp)
+
+        self.filterColumnComboBox = QComboBox()
+        self.filterColumnComboBox.addItem("Title")
+        self.filterColumnComboBox.addItem("Rhythm")
+        self.filterColumnComboBox.addItem("Meter")
+        self.filterColumnComboBox.addItem("Key")
+
+        self.filterPatternLineEdit.textChanged.connect(self.filterRegExpChanged)
+        self.filterSyntaxComboBox.currentIndexChanged.connect(self.filterRegExpChanged)
+        self.filterColumnComboBox.currentIndexChanged.connect(self.filterColumnChanged)
+        self.filterCaseSensitivityCheckBox.toggled.connect(self.filterRegExpChanged)
+
+        mainLayout = QVBoxLayout()
+        mainLayout.addWidget(self.proxyView)
+        self.setLayout(mainLayout)
+
+        #self.resize(500, 450)
+
+        self.proxyView.sortByColumn(self.T, Qt.AscendingOrder)
+        self.filterColumnComboBox.setCurrentIndex(0)
+
+        #self.filterPatternLineEdit.setText("Andy|Grace")
+        self.filterCaseSensitivityCheckBox.setChecked(False)
+
+    def setSourceModel(self, model):
+        self.proxyModel.setSourceModel(model)
+
+    def filterRegExpChanged(self):
+        syntax_nr = self.filterSyntaxComboBox.itemData(self.filterSyntaxComboBox.currentIndex())
+        syntax = QRegExp.PatternSyntax(syntax_nr)
+
+        if self.filterCaseSensitivityCheckBox.isChecked():
+            caseSensitivity = Qt.CaseSensitive
+        else:
+            caseSensitivity = Qt.CaseInsensitive
+
+        regExp = QRegExp(self.filterPatternLineEdit.text(),
+                caseSensitivity, syntax)
+        self.proxyModel.setFilterRegExp(regExp)
+
+    def filterColumnChanged(self):
+        self.proxyModel.setFilterKeyColumn(self.filterColumnComboBox.currentIndex() + 1)
+
+    def createABCModel(self):
+        model = QStandardItemModel(0, 5)
+
+        model.setHeaderData(0, Qt.Horizontal, "Index")
+        model.setHeaderData(1, Qt.Horizontal, "Title")
+        model.setHeaderData(2, Qt.Horizontal, "Rhythm")
+        model.setHeaderData(3, Qt.Horizontal, "Meter")
+        model.setHeaderData(4, Qt.Horizontal, "Key")
+
+        x = 0
+        for i in tuneBook.tunes:
+            tune = Tune()
+            tune.load(i)
+            t = tune.getField('T:')
+            r = tune.getField('R:')
+            m = tune.getField('M:')
+            k = tune.getField('K:')
+
+            model.insertRow(0)
+            model.setData(model.index(0, 0), x)
+            model.setData(model.index(0, 1), t)
+            model.setData(model.index(0, 2), r)
+            model.setData(model.index(0, 3), m)
+            model.setData(model.index(0, 4), k)
+            x += 1
+        return model
+
+    def getTableViewValue(self,row, column, widget):
+        choords = widget.model().index(row, column)
+        return(widget.model().data(choords))
+
+    def itemSelected(self):
+        row = self.proxyView.currentIndex().row()
+        column = 0
+        index = self.getTableViewValue(row, column, self.proxyView)
+        if index >= 0:  # Prevent None selected
+            tuneBook.index = int(index)
+            mainWindow.showTune()
+
+    def reloadTable(self):
+        app.setOverrideCursor(Qt.WaitCursor)
+        self.setSourceModel(self.createABCModel())
+        self.proxyView.resizeColumnsToContents()
+        app.restoreOverrideCursor()
+
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super(MainWindow, self).__init__()
+
+        self.createActions()
+
+        self.uuid = str(uuid.uuid4())
+        self.tmpdir = os.path.abspath(os.path.join(os.sep, 'tmp'))
+        self.midi = QFile(os.path.join(self.tmpdir, PROGRAM_NAME + self.uuid) + '.mid')
+
+        self.statusT = QLabel()
+        self.statusR = QLabel()
+        self.statusK = QLabel()
+
+        self.comboTempo = QComboBox()
+        self.comboTempo.setEditable(False)
+        self.comboTempo.currentIndexChanged[str].connect(self.updateMIDI)
+        self.comboTempo.addItem(_("Default"))
+        for i in range(60, 360, 60):
+            self.comboTempo.addItem(str(i))
+
+        self.transposeSpinBox = QSpinBox()
+        self.transposeSpinBox.setRange(-100, 100)
+        self.transposeSpinBox.setSingleStep(1)
+        self.transposeSpinBox.setValue(0)
+        self.transposeSpinBox.valueChanged.connect(self.transpose)
+
+        self.svgWidget = QSvgWidget()
+        self.svgPalette = self.svgWidget.palette()
+        self.svgPalette.setColor(self.svgWidget.backgroundRole(), Qt.white)
+
+
+        self.svgScroll = QScrollArea()
+        self.svgScroll.setWidget(self.svgWidget)
+
+        self.textEdit = QTextEdit()
+        self.textEdit.textChanged.connect(self.autoUpdateInterface)
+
+        self.logView = QTextEdit()
+
+        self.mediaPlayer = QMediaPlayer()
+        self.playList = QMediaPlaylist()
+        self.tuneTable = TuneTable()
+
+        self.createMenus()
+        self.createToolBars()
+        self.createDockWindows()
+        self.createStatusBar()
+        self.readSettings()
+
+        try:
+            f = sys.argv[1]
+        except:
+            f = None
+
+        if f:
+            self.openFile(f)
+
+    def closeEvent(self, event):
+        self.midi.remove()
+        app.quit()
+
+    def openFile(self, f=None):
+        if f:
+            select = f
+        else:
+            select = QFileDialog.getOpenFileName(self, _("Open file"))[0]
+
+        if select:
+            tuneBook.loadFile(select)
+            self.showTune()
+            for i in tuneBook.tunes:
+                tuneBook.tunesSaved.append(i)
+            self.tuneTable.reloadTable()
+            if not self.toggleShowIndexAct.isChecked():
+                self.tuneTable.proxyView.setColumnHidden(0,True)
+
+    def showTune(self):
+        if tuneBook.tunes:
+            self.textEdit.setText(tuneBook.tunes[tuneBook.index])
+            self.comboTempo.setCurrentIndex(0)
+            self.transposeSpinBox.setValue(0)
+            if not self.toggleAutorefreshAct.isChecked():
+                self.updateInterface()
+
+    def autoUpdateInterface(self):
+        if self.toggleAutorefreshAct.isChecked():
+            self.updateInterface()
+
+    def updateInterface(self):
+        tune = Tune()
+        tune.load(self.textEdit.toPlainText())
+        t = tune.getField('T:')
+        self.logView.append(_("SHOWING: ") +  t)
+        self.updateStatus()
+        self.updateTitle()
+        self.updateSvg()
+        self.updateMIDI()
+
+    def updateStatus(self):
+        tune = Tune()
+        tune.load(self.textEdit.toPlainText())
+        t = tune.getField('T:')
+        r = tune.getField('R:')
+        k = tune.getField('K:')
+        self.statusT.setText(t)
+        self.statusK.setText(k)
+        self.statusR.setText(r.title())
+
+    def updateTitle(self):
+        if self.textEdit.toPlainText() == tuneBook.tunes[tuneBook.index]:
+            self.setWindowTitle(PROGRAM_NAME)
+        else:
+            self.setWindowTitle(PROGRAM_NAME + '*')
+
+    def updateSvg(self):
+        #if not self.toggleShowSheetAct.isChecked():
+        #    return(0)
+        buff = self.textEdit.toPlainText().encode()
+        svg = subprocess.run(
+            ('abcm2ps', '-q', '-g', '-', '-O', '-'),
+            input=buff, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if svg.stderr:
+            self.logView.append(svg.stderr.decode())
+        else:
+            self.logView.append(_("SVG OK"))
+        self.svgWidget.load(svg.stdout)
+        print(self.svgWidget.sizeHint())
+        self.svgWidget.resize(self.svgWidget.sizeHint())
+        self.svgWidget.setAutoFillBackground(True)
+        self.svgWidget.setPalette(self.svgPalette)
+
+    def exportMIDI(self):
+        outfile = self.midi.fileName()
+        print(outfile)
+        buff = self.textEdit.toPlainText().encode()
+
+        if not self.comboTempo.currentIndex():
+            cmd = ('abc2midi', '-', '-silent', '-o', outfile)
+        else:
+            tempo = self.comboTempo.currentText()
+            cmd = ('abc2midi', '-', '-silent', '-Q', tempo, '-o', outfile)
+
+        midi = subprocess.run(cmd, input=buff, stderr=subprocess.PIPE)
+        if midi.stderr:
+            self.logView.append(midi.stderr.decode())
+        else:
+            self.logView.append(_("MIDI OK"))
+
+    def exportMIDItoFile(self):
+        tune = Tune()
+        tune.load(self.textEdit.toPlainText())
+        defname = tune.getField('T:') + '.mid'
+        select = QFileDialog.getSaveFileName(self, _("Export to MIDI file"),
+                                             defname)[0]
+        print(select)
+        if select:
+            f = QFile(outfile)
+            self.midi.copy(select)
+            self.midi.close()
+
+    def updateMIDI(self):
+        if self.togglePlayAct.isChecked():
+            self.exportMIDI()
+            url = QUrl.fromLocalFile(self.midi.fileName())
+            mediaContent = QMediaContent(url)
+            self.playList.addMedia(mediaContent)
+            self.playList.setPlaybackMode(QMediaPlaylist.Loop)
+            self.mediaPlayer.setPlaylist(self.playList)
+            self.mediaPlayer.play()
+
+    def toggleShowSheet(self):
+        if self.toggleShowSheetAct.isChecked():
+            self.musicDock.show()
+        else:
+            self.musicDock.hide()
+
+    def toggleShowCode(self):
+        if self.toggleShowCodeAct.isChecked():
+            self.editDock.show()
+        else:
+            self.editDock.hide()
+
+    def toggleShowLog(self):
+        if self.toggleShowLogAct.isChecked():
+            self.logDock.show()
+        else:
+            self.logDock.hide()
+
+    def toggleShowTable(self):
+        if self.toggleShowTableAct.isChecked():
+            self.tableDock.show()
+        else:
+            self.tableDock.hide()
+
+    def toggleHideToolbar(self):
+        if self.toggleHideToolbarAct.isChecked():
+            self.playToolBar.hide()
+        else:
+            self.playToolBar.show()
+
+    def toggleTearOff(self):
+        if self.toggleTearOffAct.isChecked():
+            self.tunebookMenu.setTearOffEnabled(True)
+            self.tuneMenu.setTearOffEnabled(True)
+            self.viewMenu.setTearOffEnabled(True)
+            self.helpMenu.setTearOffEnabled(True)
+        else:
+            self.tunebookMenu.setTearOffEnabled(False)
+            self.tuneMenu.setTearOffEnabled(False)
+            self.viewMenu.setTearOffEnabled(False)
+            self.helpMenu.setTearOffEnabled(False)
+
+    def toggleShowIndex(self, coln):
+        if self.toggleShowIndexAct.isChecked():
+            self.tuneTable.proxyView.setColumnHidden(0, False)
+        else:
+            self.tuneTable.proxyView.setColumnHidden(0, True)
+
+
+    def togglePlay(self):
+        if self.togglePlayAct.isChecked():
+            self.updateMIDI()
+            self.mediaPlayer.stop()
+            self.mediaPlayer.play()
+        else:
+            self.mediaPlayer.stop()
+
+    def save(self):
+        ''' Copy current text to tunebook tune and write tunebook to disk.
+        If tunebook was reindexed or reordered, it will save such changes.'''
+        tuneBook.save(self.textEdit.toPlainText())
+        self.updateTitle()
+        oldindex = self.tuneTable.proxyView.currentIndex().row()
+        self.tuneTable.reloadTable()
+        self.tuneTable.proxyView.setCurrentIndex(self.tuneTable.proxyView.model().index(max(oldindex, 0), 0))
+
+    def restore(self):
+        '''Loads backup to tunebook. But not save it.'''
+        q = _("Are you sure you want to restore?\nAll changes will be lost.")
+        buttonReply = QMessageBox.question(self, _("Restore"), q,
+                                           QMessageBox.Yes | QMessageBox.No,
+                                           QMessageBox.No)
+        if buttonReply == QMessageBox.No:
+            return(0)
+        else:
+            tuneBook.restore()
+            self.tuneTable.reloadTable()
+            self.showTune()
+
+    def reindex(self):
+        tuneBook.reindex()
+        self.showTune()
+
+    def sort(self):
+        tuneBook.sort()
+        self.tuneTable.reloadTable()
+        self.showTune()
+
+    def transpose(self):
+        semitones = self.transposeSpinBox.value()
+        tune = Tune()
+        tune.load(self.textEdit.toPlainText())
+        tune.transpose(semitones)
+        self.textEdit.setText(tune.text)
+
+    def isCopied(self):
+        if QApplication.clipboard().text() == self.textEdit.toPlainText():
+            return(True)
+        return(False)
+
+    def copyTune(self):
+        self.textEdit.selectAll()
+        self.textEdit.copy()
+        self.textEdit.clearFocus()
+        self.copyTuneAct.setEnabled(not self.isCopied())
+
+    def addTune(self, tune):
+        tuneBook.add(tune)
+        self.tuneTable.reloadTable()
+        #self.lastTune()
+
+    def insertTune(self, tune):
+        pos = self.tuneTable.proxyView.currentIndex().row()
+        tuneBook.insert(pos, tune)
+        self.tuneTable.reloadTable()
+        self.tuneTable.proxyView.setCurrentIndex(self.tuneTable.proxyView.model().index(max(pos, 0), 0))
+
+    def removeTune(self):
+        if tuneBook.ntunes:
+            row = self.tuneTable.proxyView.currentIndex().row()
+            column = 0
+            pos = self.tuneTable.getTableViewValue(row, column, self.tuneTable.proxyView)
+            tuneBook.remove(pos)
+            self.tuneTable.reloadTable()
+            self.tuneTable.proxyView.setCurrentIndex(self.tuneTable.proxyView.model().index(max(row - 1, 0), 0))
+            self.showTune()
+
+    def showNewTuneForm(self):
+        formWin.show()
+
+    def showAbout(self):
+        aboutDialog.show()
+
+    def createActions(self):
+        self.openFileAct = QAction(QIcon.fromTheme('document-open'),
+                               _("&Open"),
+                               self, shortcut=QKeySequence.Open,
+                               statusTip=_("Open a tune file"),
+                               triggered=self.openFile)
+
+        self.exitAct = QAction(QIcon.fromTheme('window-close'), _("E&xit"),
+                               self, shortcut=QKeySequence.Quit,
+                               statusTip=_("Exit the application"),
+                               triggered=self.closeEvent)
+
+        self.copyTuneAct = QAction(QIcon.fromTheme('edit-copy'),
+                               _("&Copy"),
+                               self, shortcut=QKeySequence.Copy,
+                               statusTip=_("Copy tune to the clipboard"),
+                               triggered=self.copyTune)
+
+        self.showAboutAct = QAction(QIcon.fromTheme(EXECUTABLE_NAME),
+                                _("&About") + " " + PROGRAM_NAME, self,
+                                statusTip=_("Information about"
+                                            " this application"),
+                                triggered=self.showAbout)
+
+        self.aboutQtAct = QAction(QIcon.fromTheme('help-about'),
+                                  _("About &Qt"), self,
+                                  statusTip=_("Show information about"
+                                              " the Qt library"),
+                                  triggered=QApplication.instance().aboutQt)
+
+        self.toggleShowSheetAct = QAction(QIcon.fromTheme('view-media-lyrics'),
+                                          _("&Show sheet music"),
+                                          self, shortcut='F4',
+                                          statusTip=_("View sheet music"),
+                                          triggered=self.toggleShowSheet)
+        self.toggleShowSheetAct.setCheckable(True)
+        self.toggleShowSheetAct.setChecked(True)
+
+        self.toggleShowCodeAct = QAction(QIcon.fromTheme('code-context'),
+                                          _("&Show abc code"),
+                                          self, shortcut='F3',
+                                          statusTip=_("View abc code"),
+                                          triggered=self.toggleShowCode)
+        self.toggleShowCodeAct.setCheckable(True)
+        self.toggleShowCodeAct.setChecked(True)
+
+        self.toggleShowTableAct = QAction(QIcon.fromTheme('table'),
+                                          _("&Show table"),
+                                          self, shortcut='F2',
+                                          statusTip=_("View table"),
+                                          triggered=self.toggleShowTable)
+        self.toggleShowTableAct.setCheckable(True)
+        self.toggleShowTableAct.setChecked(True)
+
+        self.toggleShowLogAct = QAction(QIcon.fromTheme('text-x-log'),
+                                          _("&Show log"),
+                                          self, shortcut='F6',
+                                          statusTip=_("View abc code"),
+                                          triggered=self.toggleShowLog)
+        self.toggleShowLogAct.setCheckable(True)
+
+        self.toggleHideToolbarAct = QAction(QIcon.fromTheme('configure-toolbars'),
+                                          _("&Hide toolbar"),
+                                          self, shortcut='Ctrl+T',
+                                          statusTip=_("Hide toolbar"),
+                                          triggered=self.toggleHideToolbar)
+        self.toggleHideToolbarAct.setCheckable(True)
+
+        self.toggleAutorefreshAct = QAction(QIcon.fromTheme('view-refresh'),
+                                          _("&Autorefresh"),
+                                          self, shortcut='Ctrl+R',
+                                          statusTip=_("Activate autorefreshing"),
+                                          triggered=self.updateInterface)
+        self.toggleAutorefreshAct.setCheckable(True)
+
+        self.refreshAct = QAction(QIcon.fromTheme('view-refresh'),
+                                          _("&Refresh"),
+                                          self, shortcut='F5',
+                                          statusTip=_("Refresh interface"),
+                                          triggered=self.updateInterface)
+
+
+        self.reindexAct = QAction(QIcon.fromTheme('format-list-ordered'),
+                                  _("&Indexize"),
+                                  self, shortcut='Ctrl+I',
+                                  statusTip=_("Reformat indices"),
+                                  triggered=self.reindex)
+
+        self.sortAct = QAction(QIcon.fromTheme('sort-name'),
+                               _("&Sort"),
+                               self, shortcut='Ctrl+J',
+                               statusTip=_("Sort by title"),
+                               triggered=self.sort)
+
+        self.restoreAct = QAction(QIcon.fromTheme('restoration'),
+                                  _("&Restore"),
+                                  self, shortcut='Ctrl+Alt+R',
+                                  statusTip=_("Restore tunebook from backup"),
+                                  triggered=self.restore)
+
+        self.addTuneAct = QAction(QIcon.fromTheme('list-add'),
+                                  _("&Add tune"),
+                                  self, shortcut='Ctrl+Alt+A',
+                                  statusTip=_("Add new tune"),
+                                  triggered=self.showNewTuneForm)
+
+        self.removeTuneAct = QAction(QIcon.fromTheme('list-remove'),
+                                  _("&Remove"),
+                                  self, shortcut='Ctrl+Alt+D',
+                                  statusTip=_("Remove tune"),
+                                  triggered=self.removeTune)
+
+        self.toggleTearOffAct = QAction(QIcon.fromTheme('application-menu'),
+                                        _("&Show Tear off menus"), self,
+                                        shortcut=QKeySequence.InsertLineSeparator,
+                                        statusTip=_("Show Tear off menus"),
+                                        triggered=self.toggleTearOff)
+        self.toggleTearOffAct.setCheckable(True)
+
+        self.toggleShowIndexAct = QAction(QIcon.fromTheme('view-table-of-contents-rtl'),
+                                        _("&Show index column"), self,
+                                        shortcut='Ctrl+Alt+I',
+                                        statusTip=_("Show index column"),
+                                        triggered=self.toggleShowIndex)
+        self.toggleShowIndexAct.setCheckable(True)
+
+        self.saveAct = QAction(QIcon.fromTheme('document-save'),
+                               _("&Save"),
+                               self, shortcut=QKeySequence.Save,
+                               statusTip=_("Save tunes"),
+                               triggered=self.save)
+
+        self.exportMIDIAct = QAction(QIcon.fromTheme('document-export'),
+                               _("&Export MIDI"),
+                               self, shortcut='Ctrl+M',
+                               statusTip=_("Export tune as MIDI file"),
+                               triggered=self.exportMIDItoFile)
+
+        self.togglePlayAct = QAction(QIcon.fromTheme('media-playback-start'),
+                                     _("&Play"),
+                                     self, shortcut='Alt+Intro',
+                                     statusTip=_("Play tune"),
+                                     triggered=self.togglePlay)
+        self.togglePlayAct.setCheckable(True)
+
+    def createMenus(self):
+        self.tunebookMenu = self.menuBar().addMenu(_("&Tunebook"))
+        self.tunebookMenu.addAction(self.openFileAct)
+        self.tunebookMenu.addAction(self.addTuneAct)
+        self.tunebookMenu.addSeparator()
+        self.tunebookMenu.addAction(self.reindexAct)
+        self.tunebookMenu.addAction(self.sortAct)
+        self.tunebookMenu.addSeparator()
+        self.tunebookMenu.addAction(self.restoreAct)
+        self.tunebookMenu.addAction(self.saveAct)
+        self.tunebookMenu.addSeparator()
+        self.tunebookMenu.addAction(self.exitAct)
+
+        self.tuneMenu = self.menuBar().addMenu(_("&Tune"))
+        self.tuneMenu.addAction(self.refreshAct)
+        self.tuneMenu.addAction(self.toggleAutorefreshAct)
+        self.tuneMenu.addSeparator()
+        self.tuneMenu.addAction(self.copyTuneAct)
+        self.tuneMenu.addAction(self.removeTuneAct)
+        self.tuneMenu.addSeparator()
+        self.tuneMenu.addAction(self.exportMIDIAct)
+
+        self.viewMenu = self.menuBar().addMenu(_("View"))
+        self.viewMenu.addAction(self.toggleShowTableAct)
+        self.viewMenu.addAction(self.toggleShowCodeAct)
+        self.viewMenu.addAction(self.toggleShowSheetAct)
+        self.viewMenu.addAction(self.toggleShowLogAct)
+        self.viewMenu.addSeparator()
+        self.viewMenu.addAction(self.toggleShowIndexAct)
+        self.viewMenu.addAction(self.toggleTearOffAct)
+        self.viewMenu.addSeparator()
+        self.viewMenu.addAction(self.toggleHideToolbarAct)
+
+        self.helpMenu = self.menuBar().addMenu(_("&Help"))
+        self.helpMenu.addAction(self.showAboutAct)
+        self.helpMenu.addAction(self.aboutQtAct)
+
+    def createToolBars(self):
+        self.playToolBar = self.addToolBar(_("Play"))
+        self.playToolBar.addAction(self.toggleShowSheetAct)
+        self.playToolBar.addSeparator()
+        self.playToolBar.addAction(self.toggleShowCodeAct)
+        self.playToolBar.addSeparator()
+        self.playToolBar.addAction(self.togglePlayAct)
+        self.playToolBar.addSeparator()
+        self.playToolBar.addWidget(self.comboTempo)
+        self.playToolBar.addSeparator()
+        self.playToolBar.addWidget(self.transposeSpinBox)
+        self.playToolBar.addSeparator()
+        self.filterToolBar = self.addToolBar(_("Filter"))
+        self.filterToolBar.addWidget(self.tuneTable.filterPatternLabel)
+        self.filterToolBar.addWidget(self.tuneTable.filterPatternLineEdit)
+        self.filterToolBar.addSeparator()
+        self.filterToolBar.addWidget(self.tuneTable.filterColumnComboBox)
+        self.filterToolBar.addSeparator()
+        self.filterToolBar.addWidget(self.tuneTable.filterSyntaxComboBox)
+        self.filterToolBar.addSeparator()
+        self.filterToolBar.addWidget(self.tuneTable.filterCaseSensitivityCheckBox)
+
+    def createStatusBar(self):
+        self.statusBar().addWidget(self.statusT, Qt.AlignLeft)
+        self.statusBar().addWidget(self.statusK, Qt.AlignRight)
+        self.statusBar().addWidget(self.statusR, Qt.AlignRight)
+
+    def createDockWindows(self):
+        self.tableDock = QDockWidget(_("Tunes"), self)
+        self.tableDock.setWidget(self.tuneTable)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.tableDock)
+
+        self.logDock = QDockWidget(_("Log"), self)
+        self.logDock.setWidget(self.logView)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.logDock)
+        self.logDock.hide()
+
+        self.musicDock = QDockWidget(_("Music score"), self)
+        self.musicDock.setWidget(self.svgScroll)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.musicDock)
+
+        self.editDock = QDockWidget(_("Edit tune"), self)
+        self.editDock.setWidget(self.textEdit)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.editDock)
+
+    def readSettings(self):
+        settings = QSettings(PROGRAM_NAME, _("Settings"))
+        size = settings.value("size", QSize(1280, 720))
+        self.setWindowTitle(PROGRAM_NAME)
+        self.setWindowIcon(QIcon.fromTheme(EXECUTABLE_NAME))
+        self.resize(size)
+
 if __name__ == '__main__':
 
     import sys
 
     app = QApplication(sys.argv)
     tuneBook = TuneBook()
-    editWin = EditWindow()
+    mainWindow = MainWindow()
     aboutDialog = AboutDialog()
-    sheetWin = SheetWindow()
     formWin = NewTuneForm()
-    editWin.show()
+    mainWindow.show()
     sys.exit(app.exec_())
