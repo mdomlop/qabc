@@ -5,11 +5,39 @@ import gettext
 import subprocess
 import uuid
 
-from PyQt5.QtCore import *
-from PyQt5.QtGui import *
-from PyQt5.QtWidgets import *
-from PyQt5.QtSvg import *
-from PyQt5.QtMultimedia import *
+from PyQt5.QtCore import (QFile,
+                          QRegExp,
+                          QSettings,
+                          QSize,
+                          QSortFilterProxyModel,
+                          Qt,
+                          QT_VERSION_STR,
+                          QUrl)
+from PyQt5.QtGui import QFont, QIcon, QKeySequence, QStandardItemModel
+from PyQt5.QtWidgets import (QAbstractItemView,
+                             QAction,
+                             QApplication,
+                             QCheckBox,
+                             QComboBox,
+                             QDockWidget,
+                             QFileDialog,
+                             QGridLayout,
+                             QHBoxLayout,
+                             QLabel,
+                             QLineEdit,
+                             QMainWindow,
+                             QMessageBox,
+                             QPushButton,
+                             QRadioButton,
+                             QScrollArea,
+                             QSpinBox,
+                             QTableView,
+                             QTabWidget,
+                             QTextEdit,
+                             QVBoxLayout,
+                             QWidget)
+from PyQt5.QtSvg import QSvgWidget
+from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer, QMediaPlaylist
 
 PROGRAM_NAME = "Qabc"
 EXECUTABLE_NAME = "qabc"
@@ -44,6 +72,7 @@ License: GPL-3.0+
  On Debian systems, the complete text of the GNU General
  Public License version 3 can be found in "/usr/share/common-licenses/GPL-3".
 '''
+
 
 class TuneBook():
     def __init__(self):
@@ -238,7 +267,7 @@ class NewTuneForm(QWidget):
         mainLayout.addWidget(label, 0, 0)
         mainLayout.addLayout(radioLayout, 1, 0)
         mainLayout.addWidget(self.textEdit, 2, 0)
-        mainLayout.addLayout(btnLayout,3, 0, Qt.AlignRight)
+        mainLayout.addLayout(btnLayout, 3, 0, Qt.AlignRight)
         self.setLayout(mainLayout)
 
     def accept(self):
@@ -249,7 +278,6 @@ class NewTuneForm(QWidget):
             mainWindow.insertTune(tune)
         self.textEdit.clear()
         self.close()
-
 
 
 class AboutDialog(QWidget):
@@ -462,7 +490,7 @@ class TuneTable(QWidget):
             caseSensitivity = Qt.CaseInsensitive
 
         regExp = QRegExp(self.filterPatternLineEdit.text(),
-                caseSensitivity, syntax)
+                         caseSensitivity, syntax)
         self.proxyModel.setFilterRegExp(regExp)
 
     def filterColumnChanged(self):
@@ -495,7 +523,7 @@ class TuneTable(QWidget):
             x += 1
         return model
 
-    def getTableViewValue(self,row, column, widget):
+    def getTableViewValue(self, row, column, widget):
         coordinates = widget.model().index(row, column)
         return(widget.model().data(coordinates))
 
@@ -588,7 +616,7 @@ class MainWindow(QMainWindow):
                 tuneBook.tunesSaved.append(i)
             self.tuneTable.reloadTable()
             if not self.toggleShowIndexAct.isChecked():
-                self.tuneTable.proxyView.setColumnHidden(0,True)
+                self.tuneTable.proxyView.setColumnHidden(0, True)
 
     def showTune(self):
         if tuneBook.tunes:
@@ -606,7 +634,7 @@ class MainWindow(QMainWindow):
         tune = Tune()
         tune.load(self.textEdit.toPlainText())
         t = tune.getField('T:')
-        self.logView.append(_("SHOWING: ") +  t)
+        self.logView.append(_("SHOWING: ") + t)
         self.updateStatus()
         self.updateTitle()
         self.updateSvg()
@@ -629,8 +657,6 @@ class MainWindow(QMainWindow):
             self.setWindowTitle(PROGRAM_NAME + '*')
 
     def updateSvg(self):
-        #if not self.toggleShowSheetAct.isChecked():
-        #    return(0)
         buff = self.textEdit.toPlainText().encode()
         svg = subprocess.run(
             ('abcm2ps', '-q', '-g', '-', '-O', '-'),
@@ -667,7 +693,6 @@ class MainWindow(QMainWindow):
         select = QFileDialog.getSaveFileName(self, _("Export to MIDI file"),
                                              defname)[0]
         if select:
-            f = QFile(outfile)
             self.midi.copy(select)
             self.midi.close()
 
@@ -729,7 +754,6 @@ class MainWindow(QMainWindow):
         else:
             self.tuneTable.proxyView.setColumnHidden(0, True)
 
-
     def togglePlay(self):
         if self.togglePlayAct.isChecked():
             self.updateMIDI()
@@ -790,7 +814,6 @@ class MainWindow(QMainWindow):
     def addTune(self, tune):
         tuneBook.add(tune)
         self.tuneTable.reloadTable()
-        #self.lastTune()
 
     def insertTune(self, tune):
         pos = self.tuneTable.proxyView.currentIndex().row()
@@ -816,10 +839,10 @@ class MainWindow(QMainWindow):
 
     def createActions(self):
         self.openFileAct = QAction(QIcon.fromTheme('document-open'),
-                               _("&Open"),
-                               self, shortcut=QKeySequence.Open,
-                               statusTip=_("Open a tune file"),
-                               triggered=self.openFile)
+                                   _("&Open"),
+                                   self, shortcut=QKeySequence.Open,
+                                   statusTip=_("Open a tune file"),
+                                   triggered=self.openFile)
 
         self.exitAct = QAction(QIcon.fromTheme('window-close'), _("E&xit"),
                                self, shortcut=QKeySequence.Quit,
@@ -827,16 +850,16 @@ class MainWindow(QMainWindow):
                                triggered=self.closeEvent)
 
         self.copyTuneAct = QAction(QIcon.fromTheme('edit-copy'),
-                               _("&Copy"),
-                               self, shortcut=QKeySequence.Copy,
-                               statusTip=_("Copy tune to the clipboard"),
-                               triggered=self.copyTune)
+                                   _("&Copy"),
+                                   self, shortcut=QKeySequence.Copy,
+                                   statusTip=_("Copy tune to the clipboard"),
+                                   triggered=self.copyTune)
 
         self.showAboutAct = QAction(QIcon.fromTheme(EXECUTABLE_NAME),
-                                _("&About") + " " + PROGRAM_NAME, self,
-                                statusTip=_("Information about"
-                                            " this application"),
-                                triggered=self.showAbout)
+                                    _("&About") + " " + PROGRAM_NAME, self,
+                                    statusTip=_("Information about"
+                                                " this application"),
+                                    triggered=self.showAbout)
 
         self.aboutQtAct = QAction(QIcon.fromTheme('help-about'),
                                   _("About &Qt"), self,
@@ -853,10 +876,10 @@ class MainWindow(QMainWindow):
         self.toggleShowSheetAct.setChecked(True)
 
         self.toggleShowCodeAct = QAction(QIcon.fromTheme('code-context'),
-                                          _("&Show abc code"),
-                                          self, shortcut='F3',
-                                          statusTip=_("View abc code"),
-                                          triggered=self.toggleShowCode)
+                                         _("&Show abc code"),
+                                         self, shortcut='F3',
+                                         statusTip=_("View abc code"),
+                                         triggered=self.toggleShowCode)
         self.toggleShowCodeAct.setCheckable(True)
         self.toggleShowCodeAct.setChecked(True)
 
@@ -869,32 +892,31 @@ class MainWindow(QMainWindow):
         self.toggleShowTableAct.setChecked(True)
 
         self.toggleShowLogAct = QAction(QIcon.fromTheme('text-x-log'),
-                                          _("&Show log"),
-                                          self, shortcut='F6',
-                                          statusTip=_("View abc code"),
-                                          triggered=self.toggleShowLog)
+                                        _("&Show log"),
+                                        self, shortcut='F6',
+                                        statusTip=_("View abc code"),
+                                        triggered=self.toggleShowLog)
         self.toggleShowLogAct.setCheckable(True)
 
         self.toggleHideToolbarAct = QAction(QIcon.fromTheme('configure-toolbars'),
-                                          _("&Hide toolbar"),
-                                          self, shortcut='Ctrl+T',
-                                          statusTip=_("Hide toolbar"),
-                                          triggered=self.toggleHideToolbar)
+                                            _("&Hide toolbar"),
+                                            self, shortcut='Ctrl+T',
+                                            statusTip=_("Hide toolbar"),
+                                            triggered=self.toggleHideToolbar)
         self.toggleHideToolbarAct.setCheckable(True)
 
         self.toggleAutorefreshAct = QAction(QIcon.fromTheme('view-refresh'),
-                                          _("&Autorefresh"),
-                                          self, shortcut='Ctrl+R',
-                                          statusTip=_("Activate autorefreshing"),
-                                          triggered=self.updateInterface)
+                                            _("&Autorefresh"),
+                                            self, shortcut='Ctrl+R',
+                                            statusTip=_("Activate autorefreshing"),
+                                            triggered=self.updateInterface)
         self.toggleAutorefreshAct.setCheckable(True)
 
         self.refreshAct = QAction(QIcon.fromTheme('view-refresh'),
-                                          _("&Refresh"),
-                                          self, shortcut='F5',
-                                          statusTip=_("Refresh interface"),
-                                          triggered=self.updateInterface)
-
+                                  _("&Refresh"),
+                                  self, shortcut='F5',
+                                  statusTip=_("Refresh interface"),
+                                  triggered=self.updateInterface)
 
         self.reindexAct = QAction(QIcon.fromTheme('format-list-ordered'),
                                   _("&Indexize"),
@@ -921,10 +943,10 @@ class MainWindow(QMainWindow):
                                   triggered=self.showNewTuneForm)
 
         self.removeTuneAct = QAction(QIcon.fromTheme('list-remove'),
-                                  _("&Remove"),
-                                  self, shortcut='Ctrl+Alt+D',
-                                  statusTip=_("Remove tune"),
-                                  triggered=self.removeTune)
+                                     _("&Remove"),
+                                     self, shortcut='Ctrl+Alt+D',
+                                     statusTip=_("Remove tune"),
+                                     triggered=self.removeTune)
 
         self.toggleTearOffAct = QAction(QIcon.fromTheme('application-menu'),
                                         _("&Show Tear off menus"), self,
@@ -934,10 +956,10 @@ class MainWindow(QMainWindow):
         self.toggleTearOffAct.setCheckable(True)
 
         self.toggleShowIndexAct = QAction(QIcon.fromTheme('view-table-of-contents-rtl'),
-                                        _("&Show index column"), self,
-                                        shortcut='Ctrl+Alt+I',
-                                        statusTip=_("Show index column"),
-                                        triggered=self.toggleShowIndex)
+                                          _("&Show index column"), self,
+                                          shortcut='Ctrl+Alt+I',
+                                          statusTip=_("Show index column"),
+                                          triggered=self.toggleShowIndex)
         self.toggleShowIndexAct.setCheckable(True)
 
         self.saveAct = QAction(QIcon.fromTheme('document-save'),
@@ -947,10 +969,10 @@ class MainWindow(QMainWindow):
                                triggered=self.save)
 
         self.exportMIDIAct = QAction(QIcon.fromTheme('document-export'),
-                               _("&Export MIDI"),
-                               self, shortcut='Ctrl+M',
-                               statusTip=_("Export tune as MIDI file"),
-                               triggered=self.exportMIDItoFile)
+                                     _("&Export MIDI"),
+                                     self, shortcut='Ctrl+M',
+                                     statusTip=_("Export tune as MIDI file"),
+                                     triggered=self.exportMIDItoFile)
 
         self.togglePlayAct = QAction(QIcon.fromTheme('media-playback-start'),
                                      _("&Play"),
@@ -1047,6 +1069,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(PROGRAM_NAME)
         self.setWindowIcon(QIcon.fromTheme(EXECUTABLE_NAME))
         self.resize(size)
+
 
 if __name__ == '__main__':
 
