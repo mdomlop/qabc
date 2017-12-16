@@ -30,6 +30,7 @@ from PyQt5.QtWidgets import (QAbstractItemView,
                              QPushButton,
                              QRadioButton,
                              QScrollArea,
+                             QSlider,
                              QSpinBox,
                              QTableView,
                              QTabWidget,
@@ -531,7 +532,7 @@ class TuneTable(QWidget):
         row = self.proxyView.currentIndex().row()
         column = self.X
         index = self.getTableViewValue(row, column, self.proxyView)
-        if index and index >= 0:  # Prevent Nonetype selected and allow 0 index
+        if index != None and index >= 0:  # Prevent Nonetype selected and allow 0 index
             tuneBook.index = int(index)
             mainWindow.showTune()
 
@@ -565,9 +566,19 @@ class MainWindow(QMainWindow):
 
         self.transposeSpinBox = QSpinBox()
         self.transposeSpinBox.setRange(-100, 100)
-        self.transposeSpinBox.setSingleStep(1)
+        self.transposeSpinBox.setSingleStep(2)
         self.transposeSpinBox.setValue(0)
         self.transposeSpinBox.valueChanged.connect(self.transpose)
+
+        self.sliderZoom = QSlider(Qt.Horizontal)
+        self.sliderZoom.setFocusPolicy(Qt.StrongFocus)
+        self.sliderZoom.setTickPosition(QSlider.TicksBothSides)
+        self.sliderZoom.setTickInterval(100)
+        self.sliderZoom.setSingleStep(1)
+        self.sliderZoom.setMinimum(-100)
+        self.sliderZoom.setMaximum(100)
+        self.sliderZoom.setValue(0)
+        self.sliderZoom.valueChanged.connect(self.svgZoom)
 
         self.svgWidget = QSvgWidget()
         self.svgPalette = self.svgWidget.palette()
@@ -635,6 +646,7 @@ class MainWindow(QMainWindow):
         tune.load(self.textEdit.toPlainText())
         t = tune.getField('T:')
         self.logView.append(_("SHOWING: ") + t)
+        self.sliderZoom.setValue(0)
         self.updateStatus()
         self.updateTitle()
         self.updateSvg()
@@ -666,9 +678,15 @@ class MainWindow(QMainWindow):
         else:
             self.logView.append(_("SVG OK"))
         self.svgWidget.load(svg.stdout)
-        self.svgWidget.resize(self.svgWidget.sizeHint())
+        self.svgFit(self.musicDock.width())
         self.svgWidget.setAutoFillBackground(True)
         self.svgWidget.setPalette(self.svgPalette)
+
+    def svgFit(self, w):
+        hw = self.svgWidget.sizeHint().width()
+        hh = self.svgWidget.sizeHint().height()
+        h  = hh * w / hw
+        self.svgWidget.resize(round(w), round(h))
 
     def exportMIDI(self):
         outfile = self.midi.fileName()
@@ -799,6 +817,16 @@ class MainWindow(QMainWindow):
         tune.load(self.textEdit.toPlainText())
         tune.transpose(semitones)
         self.textEdit.setText(tune.text)
+
+    def svgZoom(self):
+        perc = self.sliderZoom.value()
+        w = self.svgWidget.sizeHint().width()
+        h = self.svgWidget.sizeHint().height()
+        incw = perc * w / 100
+        inch = perc * h / 100
+        w += incw
+        h += inch
+        self.svgWidget.resize(round(w), round(h))
 
     def isCopied(self):
         if QApplication.clipboard().text() == self.textEdit.toPlainText():
@@ -1030,6 +1058,8 @@ class MainWindow(QMainWindow):
         self.playToolBar.addSeparator()
         self.playToolBar.addWidget(self.transposeSpinBox)
         self.playToolBar.addSeparator()
+        self.playToolBar.addWidget(self.sliderZoom)
+
         self.filterToolBar = self.addToolBar(_("Filter"))
         self.filterToolBar.addWidget(self.tuneTable.filterPatternLabel)
         self.filterToolBar.addWidget(self.tuneTable.filterPatternLineEdit)
@@ -1055,7 +1085,7 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.LeftDockWidgetArea, self.logDock)
         self.logDock.hide()
 
-        self.musicDock = QDockWidget(_("Music score"), self)
+        self.musicDock = SvgView(_("Music score"), self)
         self.musicDock.setWidget(self.svgScroll)
         self.addDockWidget(Qt.RightDockWidgetArea, self.musicDock)
 
@@ -1070,6 +1100,10 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(QIcon.fromTheme(EXECUTABLE_NAME))
         self.resize(size)
 
+class SvgView(QDockWidget):
+    def resizeEvent(self, QResizeEvent):
+        mainWindow.sliderZoom.setValue(0)
+        mainWindow.svgFit(self.width())
 
 if __name__ == '__main__':
 
